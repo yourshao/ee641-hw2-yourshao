@@ -1,7 +1,6 @@
 """
 Main training script for hierarchical VAE experiments.
 """
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -38,7 +37,7 @@ def compute_hierarchical_elbo(recon_x, x, mu_low, logvar_low, mu_high, logvar_hi
     """
     # Reconstruction loss (binary cross-entropy)
     recon_loss = F.binary_cross_entropy_with_logits(
-        recon_x.view(-1), x.view(-1), reduction='sum'
+        recon_x.contiguous().view(-1), x.contiguous().view(-1), reduction='sum'
     )
     
     # KL divergence for high-level latent: KL(q(z_high) || p(z_high))
@@ -73,7 +72,7 @@ def train_epoch(model, data_loader, optimizer, epoch, device, config):
     }
     
     # Get annealing parameters for this epoch
-    beta = kl_annealing_schedule(epoch, method=config['kl_anneal_method'])
+    beta = kl_annealing_schedule(epoch)
     temperature = temperature_annealing_schedule(epoch)
     
     for batch_idx, (patterns, styles, densities) in enumerate(data_loader):
@@ -124,7 +123,7 @@ def main():
         'z_high_dim': 4,
         'z_low_dim': 12,
         'kl_anneal_method': 'cyclical',  # 'linear', 'cyclical', or 'sigmoid'
-        'data_dir': 'data/drums',
+        'data_dir': '../data/drums',
         'checkpoint_dir': 'checkpoints',
         'results_dir': 'results'
     }
@@ -200,6 +199,7 @@ def main():
             
             # Average validation metrics
             n_val = len(val_dataset)
+
             for key in val_metrics:
                 val_metrics[key] /= n_val
             
@@ -221,11 +221,25 @@ def main():
     
     # Save final model and history
     torch.save(model.state_dict(), f"{config['results_dir']}/best_model.pth")
-    
+
+    history_to_save = {
+        'train': history['train'],
+        'val': history['val'],
+        'config': {
+            **config,
+            'device': str(config['device'])  # e.g., 'cuda' or 'cpu'
+        }
+    }
+
     with open(f"{config['results_dir']}/training_log.json", 'w') as f:
-        json.dump(history, f, indent=2)
+        json.dump(history_to_save, f, indent=2)
     
     print(f"Training complete. Results saved to {config['results_dir']}/")
 
 if __name__ == '__main__':
     main()
+
+
+
+
+

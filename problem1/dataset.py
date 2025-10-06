@@ -8,6 +8,7 @@ from PIL import Image
 import os
 import json
 import numpy as np
+from pathlib import Path
 
 class FontDataset(Dataset):
     def __init__(self, data_dir, split='train'):
@@ -16,22 +17,25 @@ class FontDataset(Dataset):
         
         Args:
             data_dir: Path to font dataset directory
-            split: 'train' or 'val'
+            split: 'train_samples' or 'val_samples'  different
         """
-        self.data_dir = data_dir
+        PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+        self.data_dir = os.path.join(PROJECT_ROOT, data_dir)
         self.split = split
+        self.split_dir = os.path.join(self.data_dir, split)
         
-        # TODO: Load metadata from fonts_metadata.json
+        # TODO: Load metadata from fonts_metadata.json  ？？？？
         # Expected structure:
         # {
         #   "train": [{"path": "A/font1_A.png", "letter": "A", "font": 1}, ...],
         #   "val": [...]
         # }
-        metadata_path = os.path.join(data_dir, 'fonts_metadata.json')
+        metadata_path = os.path.join(self.data_dir, 'metadata.json')
         with open(metadata_path, 'r') as f:
             metadata = json.load(f)
         
-        self.samples = metadata[split]
+        self.samples = metadata[split+"_samples"]
         self.letter_to_id = {chr(65+i): i for i in range(26)}  # A=0, B=1, ..., Z=25
     
     def __len__(self):
@@ -54,7 +58,7 @@ class FontDataset(Dataset):
         # 4. Normalize to [0, 1]
         # 5. Convert to tensor
         
-        image_path = os.path.join(self.data_dir, sample['path'])
+        image_path = os.path.join(self.split_dir, sample['filename'])
         image = Image.open(image_path).convert('L')  # Ensure grayscale
         image = image.resize((28, 28), Image.LANCZOS)
         

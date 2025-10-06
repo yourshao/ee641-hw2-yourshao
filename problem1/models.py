@@ -36,6 +36,12 @@ class Generator(nn.Module):
             # Use ConvTranspose2d with appropriate padding/stride
             # Include BatchNorm2d and ReLU (except final layer)
             # Final layer should use Tanh activation
+            nn.ConvTranspose2d(128, 64, kernel_size=4, stride=2, padding=1, bias=False),  # 7->14
+            nn.BatchNorm2d(64),
+            nn.ReLU(inplace=True),
+
+            nn.ConvTranspose2d(64, 1, kernel_size=4, stride=2, padding=1, bias=False),   # 14->28
+            nn.Tanh(),
         )
     
     def forward(self, z, class_label=None):
@@ -53,7 +59,17 @@ class Generator(nn.Module):
         # If conditional, concatenate z and class_label
         # Project to spatial dimensions
         # Apply upsampling network
-        pass
+        if self.conditional:
+            if class_label is None:
+                raise ValueError("conditional=True but class_label is None")
+            z = torch.cat([z, class_label], dim=1)  # [B, z_dim + num_classes]
+
+        x = self.project(z)                 # [B, 128*7*7]
+        x = x.view(-1, 128, 7, 7)           # [B, 128, 7, 7]
+        img = self.main(x)                  # [B, 1, 28, 28], range [0,1]
+        return img
+
+
 
 class Discriminator(nn.Module):
     def __init__(self, conditional=False, num_classes=26):
@@ -69,6 +85,21 @@ class Discriminator(nn.Module):
             # 28×28×1 → 14×14×64 → 7×7×128 → 3×3×256
             # Use Conv2d with appropriate stride
             # LeakyReLU(0.2) and Dropout2d(0.25)
+
+            nn.Conv2d(1, 64, kernel_size=4, stride=2, padding=1, bias=False),   # 28->14
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Dropout2d(0.25),
+
+            nn.Conv2d(64, 128, kernel_size=4, stride=2, padding=1, bias=False), # 14->7
+            nn.BatchNorm2d(128),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Dropout2d(0.25),
+
+            nn.Conv2d(128, 256, kernel_size=3, stride=2, padding=0, bias=False), # 7->3
+            nn.BatchNorm2d(256),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Dropout2d(0.25),
+
         )
         
         # Calculate feature dimension after convolutions
@@ -76,7 +107,7 @@ class Discriminator(nn.Module):
         
         self.classifier = nn.Sequential(
             nn.Linear(feature_dim + (num_classes if conditional else 0), 1),
-            nn.Sigmoid()
+            # nn.Sigmoid()
         )
     
     def forward(self, img, class_label=None):
@@ -87,4 +118,15 @@ class Discriminator(nn.Module):
             Probability of being real [batch_size, 1]
         """
         # TODO: Extract features, flatten, concatenate class if conditional
-        pass
+        img = img * 2 - 1
+
+        x = self.features(img)
+        x = torch.flatten(x, 1)
+
+        if self.conditional:
+            if class_label is None:
+                raise ValueError("conditional=True but class_label is None")
+            x = torch.cat([x, class_label], dim=1)
+
+        out = self.classifier(x)           # [B, 1], probability of "real"
+        return out
